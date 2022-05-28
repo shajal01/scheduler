@@ -1,50 +1,43 @@
-from rest_framework import views, generics, response
+from datetime import datetime
+from rest_framework import views, status, response
 from .serializers import UserSerializer
 from .models import User
-from datetime import datetime
-from django.db.models import Max, Min, Q
 
 
-class RegisterUserTime(generics.CreateAPIView):
-    serializer_class = UserSerializer
-    queryset = User.objects.all()
+class RegisterUserTime(views.APIView):
+    def post(self, request, *args, **kwargs):
+        user_type = request.data.get("user_type")
+        from_time = request.data.get("from_time")
+        to_time = request.data.get("to_time")
 
+        from_time = datetime.strptime(from_time, "%I:%M %p").time()
+        to_time = datetime.strptime(to_time, "%I:%M %p").time()
 
-# class GetAvailableSlots(generics.RetrieveAPIView):
-#     serializer_class = UserSerializer
-#     queryset = User.objects.all()
-#     lookup_field = "id"
-#     lookup_fields = ("id", "id2")
+        user = User.objects.create(
+            user_type=user_type, from_time=from_time, to_time=to_time
+        )
+        seriazlier = UserSerializer(instance=user)
 
-#     def get_queryset(self):
-#         user1 = self.queryset.filter(id=self.kwargs.get(self.lookup_fields[0]))
-#         user2 = self.queryset.filter(id=self.kwargs.get(self.lookup_fields[1]))
+        return response.Response(data=seriazlier.data)
 
-#         return user1, user2
 
 class GetAvailableSlots(views.APIView):
     def get(self, request, *args, **kwargs):
         interviewer = request.query_params.get("interviewer")
         candidate = request.query_params.get("candidate")
+
         interviewer_instance = User.objects.filter(id=interviewer).first()
         candidate_instance = User.objects.filter(id=candidate).first()
-        start_time = max([interviewer_instance.from_time.strptime("%H:%M %p"), candidate_instance.from_time.strptime("%H:%M %p")])
-        print(start_time)
-        end_time = min([interviewer_instance.to_time, candidate_instance.to_time])
-        for i in range(start_time.hour, end_time.hour, 1):
-            print(i)
-        return response.Response()
 
+        if not interviewer_instance or not candidate_instance:
+            return response.Response(status=status.HTTP_400_BAD_REQUEST)
 
-# class GetAvailableSlots(views.APIView):
-#     def get(self, request, *args, **kwargs):
-#         interviewer = request.query_params.get("interviewer")
-#         candidate = request.query_params.get("candidate")
-#         from_time = (
-#             User.objects.filter(Q(id=interviewer) | Q(id=candidate))
-#             .aggregate(Max(datetime.strftime("from_time", "%I:%M %p")))
-#             .get("from_time__max")
-#         )
-#         print(from_time)
+        # select max from start time and min from end time of both interviewer and candidate
+        from_time = max([interviewer_instance.from_time, candidate_instance.from_time])
+        to_time = min([interviewer_instance.to_time, candidate_instance.to_time])
 
-#         return response.Response()
+        time_available = []
+        for i in range(from_time.hour, to_time.hour, 1):
+            time_available.append((i, i + 1))
+
+        return response.Response({"Time avalailable": time_available})
